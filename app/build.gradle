@@ -30,4 +30,5 @@ dependencies {
         force = true
     }
     implementation project(':amaplibrary')
+    compile 'com.getbase:floatingactionbutton:1.10.1'
 }

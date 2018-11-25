@@ -10,8 +10,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
-import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
@@ -25,18 +23,22 @@ import android.support.v7.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Toast;
-
 import com.amap.api.location.AMapLocation;
 import com.amap.api.location.AMapLocationClient;
 import com.amap.api.location.AMapLocationClientOption;
 import com.amap.api.location.AMapLocationListener;
 import com.amap.api.maps.AMap;
+import com.amap.api.maps.CameraUpdateFactory;
 import com.amap.api.maps.LocationSource;
 import com.amap.api.maps.MapView;
 import com.amap.api.maps.UiSettings;
+import com.amap.api.maps.model.CameraPosition;
+import com.amap.api.maps.model.LatLng;
+import com.amap.api.maps.model.MyLocationStyle;
+import com.getbase.floatingactionbutton.FloatingActionButton;
 
 public class MainActivity extends AppCompatActivity
-        implements NavigationView.OnNavigationItemSelectedListener {
+        implements NavigationView.OnNavigationItemSelectedListener, View.OnClickListener {
     //高德地图相关
     public MapView mMapView;
     public AMap aMap;
@@ -47,10 +49,15 @@ public class MainActivity extends AppCompatActivity
     public LocationSource.OnLocationChangedListener aMapOnLocationChangedListener;
     public AMapLocation aMapLocation;
     public UiSettings aMapUiSettings;
+    public MyLocationStyle aMapLocationStyle;
 
     //要申请的权限
-    private String[] permissions = {Manifest.permission.WRITE_EXTERNAL_STORAGE,Manifest.permission.ACCESS_FINE_LOCATION};
+    private String[] permissions = {Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION};
     private AlertDialog dialog;
+
+    //界面相关
+    private Toolbar mainToolbar;
+    private FloatingActionButton addGuideButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,32 +66,28 @@ public class MainActivity extends AppCompatActivity
         // 版本判断。当手机系统大于 23 时，才有必要去判断权限是否获取
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // 检查该权限是否已经获取
-            for(String permission:permissions){
+            for (String permission : permissions) {
                 int i = ContextCompat.checkSelfPermission(this, permission);
                 // 权限是否已经 授权 GRANTED---授权  DINIED---拒绝
                 if (i != PackageManager.PERMISSION_GRANTED) {
                     // 如果没有授予该权限，就去提示用户请求
                     showDialogTipUserRequestPermission();
+                    break;
                 }
             }
 
         }
 
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
+        mainToolbar = (Toolbar) findViewById(R.id.toolbar);
+        mainToolbar.setTitle("云南地质大数据");
+        setSupportActionBar(mainToolbar);
 
-        FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
-        fab.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
-            }
-        });
+        addGuideButton = (FloatingActionButton) findViewById(R.id.add_guide_button);
+        addGuideButton.setOnClickListener(this);
 
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
-                this, drawer, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close);
+                this, drawer, mainToolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close);
         drawer.addDrawerListener(toggle);
         toggle.syncState();
 
@@ -101,6 +104,8 @@ public class MainActivity extends AppCompatActivity
         aMapUiSettings.setLogoBottomMargin(-50);
         //隐藏缩放控件
         aMapUiSettings.setZoomControlsEnabled(false);
+        //高德定位按钮
+        //aMapUiSettings.setMyLocationButtonEnabled(true);
         AMapInit();
     }
 
@@ -110,10 +115,33 @@ public class MainActivity extends AppCompatActivity
     public void AMapInit() {
         //定位监听初始化
         AMapLocationListenerInit();
+        //在activity中启动自定义本地服务LocationService
+        getApplicationContext().startService(new Intent(this, LOCATION_SERVICE.getClass()));
+        if (aMapLocationClient == null) {
+            //在LocationService中启动定位
+            aMapLocationClient = new AMapLocationClient(this.getApplicationContext());
+            aMapLocationClientOption = new AMapLocationClientOption();
+            //设置为高精度定位模式
+            aMapLocationClientOption.setLocationMode(AMapLocationClientOption.AMapLocationMode.Hight_Accuracy);
+            // 使用连续定位
+            aMapLocationClientOption.setOnceLocation(false);
+            // 每5秒定位一次
+            aMapLocationClientOption.setInterval(5 * 1000);
+            aMapLocationClient.setLocationOption(aMapLocationClientOption);
+            aMapLocationClient.setLocationListener(aMapLocationListener);
+            aMapLocationClient.startLocation();
+        }
+
+        aMapLocationStyle = new MyLocationStyle();//初始化定位蓝点样式类myLocationStyle.myLocationType(MyLocationStyle.LOCATION_TYPE_LOCATION_ROTATE);//连续定位、且将视角移动到地图中心点，定位点依照设备方向旋转，并且会跟随设备移动。（1秒1次定位）如果不设置myLocationType，默认也会执行此种模式。
+        aMapLocationStyle.interval(2000); //设置连续定位模式下的定位间隔，只在连续定位模式下生效，单次定位模式下不会生效。单位为毫秒。
+        aMapLocationStyle.myLocationType(MyLocationStyle.LOCATION_TYPE_LOCATION_ROTATE_NO_CENTER);
+        aMapLocationStyle.showMyLocation(true);
+        aMap.setMyLocationStyle(aMapLocationStyle);//设置定位蓝点的Style
+
         //定位资源初始化
-        AMapLocationSourceInit();
+        //MapLocationSourceInit();
         // 设置定位监听
-        aMap.setLocationSource(aMapLocationSource);
+        //aMap.setLocationSource(aMapLocationSource);
         // 设置为true表示显示定位层并可触发定位，false表示隐藏定位层并不可触发定位，默认是false
         aMap.setMyLocationEnabled(true);
 
@@ -166,10 +194,10 @@ public class MainActivity extends AppCompatActivity
         aMapLocationListener = new AMapLocationListener() {
             @Override
             public void onLocationChanged(AMapLocation Location) {
-                if (aMapOnLocationChangedListener != null && Location != null) {
+                if (Location != null) {
                     if (Location != null && Location.getErrorCode() == 0) {
-                        aMapLocation=Location;
-                        aMapLocationListener.onLocationChanged(Location);// 显示系统小蓝点
+                        aMapLocation = Location;
+                        //aMapLocationListener.onLocationChanged(Location);// 显示系统小蓝点
                     } else {
                         String errText = "定位失败," + Location.getErrorCode() + ": " + Location.getErrorInfo();
                         Log.e("AmapErr", errText);
@@ -207,8 +235,25 @@ public class MainActivity extends AppCompatActivity
         if (id == R.id.action_settings) {
             return true;
         }
+        if (id == R.id.menu_locate) {
+            if (null != aMapLocation && null != aMap) {
+                aMap.moveCamera(CameraUpdateFactory.newCameraPosition(new CameraPosition(new LatLng(aMapLocation.getLatitude(), aMapLocation.getLongitude()), 16, 0, 0)));
+            } else {
+                Toast.makeText(getApplicationContext(), "暂无定位", Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public void onClick(View v) {
+        switch (v.getId()) {
+            case R.id.add_guide_button:
+                Toast.makeText(getApplicationContext(), "辅助线", Toast.LENGTH_SHORT).show();
+                break;
+        }
     }
 
     @SuppressWarnings("StatementWithEmptyBody")
@@ -266,6 +311,7 @@ public class MainActivity extends AppCompatActivity
         //在activity执行onSaveInstanceState时执行mMapView.onSaveInstanceState (outState)，保存地图当前的状态
         mMapView.onSaveInstanceState(outState);
     }
+
     // 提示用户该请求权限的弹出框
     private void showDialogTipUserRequestPermission() {
         new AlertDialog.Builder(this)
@@ -284,10 +330,12 @@ public class MainActivity extends AppCompatActivity
                     }
                 }).setCancelable(false).show();
     }
+
     // 开始提交请求权限
     private void startRequestPermission() {
         ActivityCompat.requestPermissions(this, permissions, 321);
     }
+
     // 用户权限 申请 的回调方法
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
@@ -363,5 +411,6 @@ public class MainActivity extends AppCompatActivity
             }
         }
     }
+
 
 }
